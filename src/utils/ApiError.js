@@ -10,7 +10,7 @@ class ApiError extends Error {//node ke ander class h error define
     this.statusCode=statusCode
     this.data=null
     this.message=message
-    this.success=success
+    // this.success=success
     this.errors=errors //array of errors...
 
     if(stack){

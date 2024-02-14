@@ -16,7 +16,7 @@ const userSchema = new Schema(
             type: String,
             required: true,
             unique: true,
-            lowecase: true,
+            lowercase: true,
             trim: true, 
         },
         fullName: {
@@ -60,7 +60,7 @@ userSchema.pre("save", async function (next) {
 })
 
 userSchema.methods.isPasswordCorrect = async function(password){
-    return await bcrypt.compare(password, this.password)//it will return boolean value
+    return await bcrypt.compare(password, this.password)
 }
 
 userSchema.methods.generateAccessToken = function(){
@@ -90,6 +90,4 @@ userSchema.methods.generateRefreshToken = function(){
     )
 }
 
-export const User = mongoose.model("User", userSchema )
-
-// Express.js middleware functions often interact with the Express.js request (req) and response (res) objects, and they may handle errors or send responses. Therefore, err and res are commonly used in Express.js middleware functions, while next is universal across both Mongoose and Express.js middleware to indicate the completion of the current middleware function.
+export const User = mongoose.model("User", userSchema)
