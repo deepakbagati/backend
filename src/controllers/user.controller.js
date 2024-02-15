@@ -271,9 +271,6 @@ const  getCurrentUser=asyncHandler(async(req,res)=>{
 
 
 
-
-
-
 const updateAccountDetails=asyncHandler(async(req,res)=>{
     const {fullName,email}= req.body
 
@@ -299,73 +296,216 @@ const updateAccountDetails=asyncHandler(async(req,res)=>{
 
 });
 
-const updateUserAvatar=asyncHandler(async(req,res)=>{
-    const avatarLocalPath = req.file?.path
+//Checking for images:
 
-    if(!avatarLocalPath){
-        throw new ApiError(400," Avatar File is Missing")
-    }
+const updateUserAvatar = asyncHandler(async (req, res) => {
+   // taking the new avatar file
+   const newAvatarLocalPath = req.file?.path; // we are writing "file" instead of "files" as we are changing only one file i.e. "avatar"
 
-    const avatar = await uploadOnCloudinary(avatarLocalPath)
+   if (!newAvatarLocalPath) {
+       throw new ApiError(404, "Avatar file not found.");
+   }
 
-    if (!avatar.url) {
-        throw new ApiError(400, "Error while uploading on avatar")
-        
-    }
+   // uploading new avatar on cloudinary
+   const newAvatar = await uploadOnCloudinary(newAvatarLocalPath);
 
-    const user = await User.findByIdAndUpdate(
-        req.user?._id,
-        {
-            $set:{
-                avatar:avatar.url
-            }
+   if(!newAvatar.url) { // we only need the new avatar url not whole object
+       throw new ApiError(404, "Avatar file not found");
+   }
 
-        },
-        {new:true}
+   // storing old avatar public_id from DB in a variable
+   const oldAvatarPublicId = req.user?.avatar.public_id;
 
-    ).select("-password")
+   // finding & updating the user on the DB
+   const user = await User.findByIdAndUpdate(
+       req.user?._id,
+       {
+           $set: {avatar: {url: newAvatar.url, public_id: newAvatar.public_id}}  // we only need the new avatar url & public_id not whole object
+       },
+       {new: true}
+   ).select("-password -avatar._id -coverImage._id");  // we dont want password field
+   
+   // deleting old avatar on cloudinary
+   const oldAvatarDeleted = await deleteOnCloudinary(oldAvatarPublicId);
+   
+   if(!oldAvatarDeleted) {
+       throw new ApiError(404, "Old avatar not deleted");
+   }
 
+   // Returning response
+   return res
+   .status(200)
+   .json(new ApiResponse(200, user, "Avatar updated successfully."));
 
-    return res
-    .status(200)
-    .json(new ApiResponse(200,"Avatar image Uploaded Successfully"))
-
-})
-
+} );
 const updateUserCoverImage = asyncHandler(async(req, res) => {
-    const coverImageLocalPath = req.file?.path
+    const newCoverImageLocalPath = req.file?.path; // we are writing "file" instead of "files" as we are changing only one file i.e. "avatar"
 
-    if (!coverImageLocalPath) {
-        throw new ApiError(400, "Cover image file is missing")
+    if (!newCoverImageLocalPath) {
+        throw new ApiError(404, "Cover Image file not found.");
     }
 
-    //TODO: delete old image - assignment
+    // Uploading new cover-image on cloudinary
+    const newCoverImage = await uploadOnCloudinary(newCoverImageLocalPath);
 
-
-    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
-
-    if (!coverImage.url) {
-        throw new ApiError(400, "Error while uploading on avatar")
-        
+    if(!newCoverImage.url) { // we only need the new cover image url not whole object
+        throw new ApiError(404, "Cover Image file not found");
     }
 
+    // storing old coverImage public_id from DB in a variable
+    const oldCoverImagePublicId = req.user?.coverImage.public_id;
+    // Finding & updating the user on the DB
     const user = await User.findByIdAndUpdate(
         req.user?._id,
         {
-            $set:{
-                coverImage: coverImage.url
-            }
+            $set: {coverImage: {url: newCoverImage.url, public_id: newCoverImage.public_id}}  // we only need the new cover image url & public_id not whole object
         },
         {new: true}
-    ).select("-password")
+    ).select("-password -avatar._id -coverImage._id");  // we dont want password field
+
+    // deleting old coverImage on cloudinary
+    const oldCoverImageDeleted = await deleteOnCloudinary(oldCoverImagePublicId);
+    
+    if(!oldCoverImageDeleted) {
+        throw new ApiError(404, "Old CoverImage not deleted");
+    }
+
+    // Returning response
+    return res
+    .status(200)
+    .json(new ApiResponse(200, user, "CoverImage updated successfully."));
+
+} );
+
+
+
+
+const getUserChannelProfile = asyncHandler(async(req, res) => {
+    const {username} = req.params
+
+    if (!username?.trim()) {
+        throw new ApiError(400, "username is missing")
+    }
+
+    const channel = await User.aggregate([
+        {
+            $match: {
+                username: username?.toLowerCase()
+            }
+        },
+        {
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "channel",
+                as: "subscribers"
+            }
+        },
+        {
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "subscriber",
+                as: "subscribedTo"
+            }
+        },
+        {
+            $addFields: {
+                subscribersCount: {
+                    $size: "$subscribers"
+                },
+                channelsSubscribedToCount: {
+                    $size: "$subscribedTo"
+                },
+                isSubscribed: {
+                    $cond: {
+                        if: {$in: [req.user?._id, "$subscribers.subscriber"]},
+                        then: true,
+                        else: false
+                    }
+                }
+            }
+        },
+        {
+            $project: {
+                fullName: 1,
+                username: 1,
+                subscribersCount: 1,
+                channelsSubscribedToCount: 1,
+                isSubscribed: 1,
+                avatar: 1,
+                coverImage: 1,
+                email: 1
+
+            }
+        }
+    ])
+
+    if (!channel?.length) {
+        throw new ApiError(404, "channel does not exists")
+    }
 
     return res
     .status(200)
     .json(
-        new ApiResponse(200, user, "Cover image updated successfully")
+        new ApiResponse(200, channel[0], "User channel fetched successfully")
     )
 })
 
+
+const getWatchHistory = asyncHandler(async(req, res) => {
+    const user = await User.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(req.user._id)
+            }
+        },
+        {
+            $lookup: {
+                from: "videos",
+                localField: "watchHistory",
+                foreignField: "_id",
+                as: "watchHistory",
+                pipeline: [
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "owner",
+                            foreignField: "_id",
+                            as: "owner",
+                            pipeline: [
+                                {
+                                    $project: {
+                                        fullName: 1,
+                                        username: 1,
+                                        avatar: 1
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields:{
+                            owner:{
+                                $first: "$owner"// direct ke user ko 1st object dedeya ..ab woh dot use karke saare values access kar sakta hai.. 
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            user[0].watchHistory,
+            "Watch history fetched successfully"
+        )
+    )
+})
 
 export {registerUser
         ,refreshAccessToken
@@ -376,6 +516,8 @@ export {registerUser
         ,updateAccountDetails
         ,getCurrentUser
         ,changeCurrentPassword
+        ,getUserChannelProfile
+        ,getWatchHistory
     
     };
 //cap User mongoose ka object haiex:find one updateOne...
