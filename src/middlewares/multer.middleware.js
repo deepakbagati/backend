@@ -14,4 +14,5 @@ export const upload = multer({
     storage, 
 })
 //storage is used as middleware..
-//localfilepath agar aachuka hai that means file server pe temporary aagi hai..so we have remove the from both cases..
+//localfilepath agar aachuka hai that means file server pe temporary aagi hai..so we have  to remove the from both cases..
+//sabse pehle file multer pe upload karwarahe hai,means lstorage pe then filname cloudinary ko derhe hai for further upload  process..
